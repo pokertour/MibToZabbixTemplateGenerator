@@ -2,7 +2,9 @@
 
 A modern Python desktop application to import SNMP MIB files and generate Zabbix 7.0 (or older) YAML templates.
 
-![App Screenshot](https://via.placeholder.com/800x450?text=MibToZabbixTemplate+UI) <!-- Replace with real screenshot if available -->
+![App Screenshot](https://github.com/user-attachments/assets/459acde2-c7bd-46d6-81e8-805cd150fffe) <!-- Replace with real screenshot if available -->
+
+![App Screenshot](https://github.com/user-attachments/assets/4f9712b9-c184-48a4-8479-e7d57073076a)
 
 ## 🚀 Features
 
