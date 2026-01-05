@@ -21,7 +21,7 @@ A modern Python desktop application to import SNMP MIB files and generate Zabbix
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/MibToZabbixTemplate.git
+   git clone https://github.com/pokertour/MibToZabbixTemplate.git
    cd MibToZabbixTemplate
    ```
 
@@ -31,7 +31,24 @@ A modern Python desktop application to import SNMP MIB files and generate Zabbix
    pip install -r requirements.txt
    ```
 
-## 📖 Usage
+## � Building the Executable (.exe)
+
+To create a standalone Windows executable, we use `PyInstaller`:
+
+1. **Install PyInstaller**:
+   ```bash
+   pip install pyinstaller
+   ```
+
+2. **Build the .exe**:
+   Run the following command in the project root:
+   ```bash
+   pyinstaller --noconfirm --onefile --windowed --collect-all customtkinter --name "MibToZabbixTemplateGenerator" main.py
+   ```
+
+The generated file will be located in the `dist/` folder.
+
+## �📖 Usage
 
 1. **Launch the app**:
    ```bash
