@@ -31,7 +31,7 @@ A modern Python desktop application to import SNMP MIB files and generate Zabbix
    pip install -r requirements.txt
    ```
 
-## � Building the Executable (.exe)
+## 📦 Building the Executable (.exe)
 
 To create a standalone Windows executable, we use `PyInstaller`:
 
@@ -48,7 +48,7 @@ To create a standalone Windows executable, we use `PyInstaller`:
 
 The generated file will be located in the `dist/` folder.
 
-## �📖 Usage
+## 📖 Usage
 
 1. **Launch the app**:
    ```bash
