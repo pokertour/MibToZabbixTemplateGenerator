@@ -10,14 +10,97 @@ from collections import Counter
 
 APP_VERSION = "1.0.0"
 
+TRANSLATIONS = {
+    "FR": {
+        "title_main": "MibToZabbixTemplateGenerator",
+        "title_preview": "Aperçu & Édition des Items",
+        "config_header": "Configuration du Template",
+        "btn_load": "Charger MIB",
+        "no_file": "Aucun fichier sélectionné",
+        "lbl_template_name": "Nom du Template :",
+        "placeholder_template": "Mon Equipement SNMP",
+        "lbl_zabbix_version": "Version Zabbix :",
+        "lbl_zabbix_group": "Groupe Zabbix :",
+        "placeholder_group": "Templates/Network Devices",
+        "lbl_base_oid": "OID Racine (Base) :",
+        "lbl_help_oid": "(Ex: Pour Christie CP4415 -> .1.3.6.1.4.1.25766.1.12.1.157)",
+        "lbl_detected_root": "OID Racine détecté :",
+        "lbl_no_root": "Racine non détectée, veuillez la saisir",
+        "list_header": "Objets détectés (Sélectionnez pour inclure)",
+        "search_label": "Rechercher : ",
+        "search_placeholder": "Rechercher par nom ou description...",
+        "col_name": "Nom de l'Objet",
+        "col_oid": "OID SNMP",
+        "col_syntax": "Type (Syntax)",
+        "col_desc": "Description",
+        "btn_select_all": "TOUT SÉLECTIONNER",
+        "btn_preview_export": "AVANT-PROPOS & EXPORT",
+        "msg_error": "Erreur",
+        "msg_warn": "Attention",
+        "msg_success": "Succès",
+        "msg_no_selection": "Veuillez sélectionner au moins un objet dans la liste.",
+        "msg_no_root": "Veuillez définir l'OID Racine.",
+        "msg_saved": "Fichier sauvegardé avec succès !",
+        "preview_header": "Personnalisez vos items avant l'exportation",
+        "lbl_name": "Nom:",
+        "lbl_key": "Clé:",
+        "lbl_desc": "Desc:",
+        "lbl_tags": "Tags:",
+        "btn_cancel": "Annuler",
+        "btn_final_export": "EXPORTER LE YAML FINAL",
+        "msg_mib_success": "objets trouvés dans la MIB."
+    },
+    "EN": {
+        "title_main": "MibToZabbixTemplateGenerator",
+        "title_preview": "Preview & Edit Items",
+        "config_header": "Template Configuration",
+        "btn_load": "Load MIB",
+        "no_file": "No file selected",
+        "lbl_template_name": "Template Name:",
+        "placeholder_template": "My SNMP Device",
+        "lbl_zabbix_version": "Zabbix Version:",
+        "lbl_zabbix_group": "Zabbix Group:",
+        "placeholder_group": "Templates/Network Devices",
+        "lbl_base_oid": "Root OID (Base):",
+        "lbl_help_oid": "(Ex: For Christie CP4415 -> .1.3.6.1.4.1.25766.1.12.1.157)",
+        "lbl_detected_root": "Root OID detected:",
+        "lbl_no_root": "Root not detected, please enter manually",
+        "list_header": "Detected Objects (Select to include)",
+        "search_label": "Search: ",
+        "search_placeholder": "Search by name or description...",
+        "col_name": "Object Name",
+        "col_oid": "SNMP OID",
+        "col_syntax": "Type (Syntax)",
+        "col_desc": "Description",
+        "btn_select_all": "SELECT ALL",
+        "btn_preview_export": "PREVIEW & EXPORT",
+        "msg_error": "Error",
+        "msg_warn": "Warning",
+        "msg_success": "Success",
+        "msg_no_selection": "Please select at least one object from the list.",
+        "msg_no_root": "Please define the Root OID.",
+        "msg_saved": "File saved successfully!",
+        "preview_header": "Customize your items before export",
+        "lbl_name": "Name:",
+        "lbl_key": "Key:",
+        "lbl_desc": "Desc:",
+        "lbl_tags": "Tags:",
+        "btn_cancel": "Cancel",
+        "btn_final_export": "EXPORT FINAL YAML",
+        "msg_mib_success": "objects found in MIB."
+    }
+}
+
 # Set appearance and theme
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 class PreviewWindow(ctk.CTkToplevel):
-    def __init__(self, parent, selected_items, base_oid, template_name, group_name, zabbix_version):
+    def __init__(self, parent, selected_items, base_oid, template_name, group_name, zabbix_version, lang="FR"):
         super().__init__(parent)
-        self.title(f"Aperçu & Edition des Items - v{APP_VERSION}")
+        self.lang = lang
+        self.t = TRANSLATIONS[lang]
+        self.title(f"{self.t['title_preview']} - v{APP_VERSION}")
         self.geometry("1100x800")
         self.parent = parent
         self.selected_items = selected_items
@@ -30,7 +113,7 @@ class PreviewWindow(ctk.CTkToplevel):
         self.grid_rowconfigure(1, weight=1)
 
         # Header
-        self.label = ctk.CTkLabel(self, text="Personnalisez vos items avant l'exportation", font=ctk.CTkFont(size=18, weight="bold"))
+        self.label = ctk.CTkLabel(self, text=self.t['preview_header'], font=ctk.CTkFont(size=18, weight="bold"))
         self.label.grid(row=0, column=0, padx=20, pady=20)
 
         # Scrollable Frame for items
@@ -48,25 +131,25 @@ class PreviewWindow(ctk.CTkToplevel):
             ctk.CTkLabel(frame, text=f"OID: {full_oid}", font=ctk.CTkFont(size=11, weight="bold"), text_color="#3b8ed0").grid(row=0, column=0, columnspan=2, padx=10, pady=(5,0), sticky="w")
 
             # Name
-            ctk.CTkLabel(frame, text="Nom:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+            ctk.CTkLabel(frame, text=self.t['lbl_name']).grid(row=1, column=0, padx=5, pady=5, sticky="e")
             name_entry = ctk.CTkEntry(frame, width=300)
             name_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
             name_entry.insert(0, item['name'])
             
             # Key
-            ctk.CTkLabel(frame, text="Clé:").grid(row=1, column=2, padx=5, pady=5, sticky="e")
+            ctk.CTkLabel(frame, text=self.t['lbl_key']).grid(row=1, column=2, padx=5, pady=5, sticky="e")
             key_entry = ctk.CTkEntry(frame, width=250)
             key_entry.grid(row=1, column=3, padx=5, pady=5, sticky="w")
             key_entry.insert(0, f"snmp.{item['name'].lower()}")
             
             # Description
-            ctk.CTkLabel(frame, text="Desc:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+            ctk.CTkLabel(frame, text=self.t['lbl_desc']).grid(row=2, column=0, padx=5, pady=5, sticky="e")
             desc_entry = ctk.CTkEntry(frame, width=300)
             desc_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
             desc_entry.insert(0, item['desc'])
 
             # Tags (New)
-            ctk.CTkLabel(frame, text="Tags:").grid(row=2, column=2, padx=5, pady=5, sticky="e")
+            ctk.CTkLabel(frame, text=self.t['lbl_tags']).grid(row=2, column=2, padx=5, pady=5, sticky="e")
             tags_entry = ctk.CTkEntry(frame, width=300, placeholder_text="component:mib-import, device:snmp")
             tags_entry.grid(row=2, column=3, padx=5, pady=5, sticky="w")
             tags_entry.insert(0, "component:mib-import")
@@ -85,10 +168,10 @@ class PreviewWindow(ctk.CTkToplevel):
         self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.btn_frame.grid(row=3, column=0, padx=20, pady=20, sticky="ew")
         
-        self.btn_cancel = ctk.CTkButton(self.btn_frame, text="Annuler", fg_color="gray", command=self.destroy)
+        self.btn_cancel = ctk.CTkButton(self.btn_frame, text=self.t['btn_cancel'], fg_color="gray", command=self.destroy)
         self.btn_cancel.pack(side="left", padx=20)
         
-        self.btn_save = ctk.CTkButton(self.btn_frame, text="EXPORTER LE YAML FINAL", fg_color="#28a745", command=self.final_export)
+        self.btn_save = ctk.CTkButton(self.btn_frame, text=self.t['btn_final_export'], fg_color="#28a745", command=self.final_export)
         self.btn_save.pack(side="right", padx=20)
 
     def final_export(self):
@@ -156,14 +239,17 @@ class PreviewWindow(ctk.CTkToplevel):
             with open(file_path, 'w', encoding='utf-8') as f:
                 yaml.dump(zbx_template, f, sort_keys=False, allow_unicode=True)
             
-            messagebox.showinfo("Terminé", f"Fichier sauvegardé avec succès !")
+            messagebox.showinfo(self.t['msg_success'], self.t['msg_saved'])
             self.destroy()
 
 class MibToZabbixApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title(f"MibToZabbixTemplateGenerator - v{APP_VERSION}")
+        self.lang = "FR"
+        self.t = TRANSLATIONS[self.lang]
+
+        self.title(f"{self.t['title_main']} - v{APP_VERSION}")
         self.geometry("1100x900")
 
         # Variables
@@ -180,44 +266,50 @@ class MibToZabbixApp(ctk.CTk):
         self.config_frame.grid_columnconfigure(1, weight=1)
 
         # Title
-        self.title_label = ctk.CTkLabel(self.config_frame, text="Configuration du Template", font=ctk.CTkFont(size=20, weight="bold"))
+        self.title_label = ctk.CTkLabel(self.config_frame, text=self.t['config_header'], font=ctk.CTkFont(size=20, weight="bold"))
         self.title_label.grid(row=0, column=0, columnspan=2, padx=20, pady=10, sticky="w")
 
+        # Language Selector (New)
+        self.lang_var = ctk.StringVar(value="FR")
+        self.lang_switch = ctk.CTkSegmentedButton(self.config_frame, values=["FR", "EN"], 
+                                                  command=self.change_language, variable=self.lang_var)
+        self.lang_switch.grid(row=0, column=1, padx=20, pady=10, sticky="e")
+
         # MIB File Selection
-        self.btn_load = ctk.CTkButton(self.config_frame, text="Charger MIB", command=self.load_mib)
+        self.btn_load = ctk.CTkButton(self.config_frame, text=self.t['btn_load'], command=self.load_mib)
         self.btn_load.grid(row=1, column=0, padx=20, pady=10, sticky="w")
         
-        self.lbl_filename = ctk.CTkLabel(self.config_frame, text="Aucun fichier sélectionné", text_color="gray")
+        self.lbl_filename = ctk.CTkLabel(self.config_frame, text=self.t['no_file'], text_color="gray")
         self.lbl_filename.grid(row=1, column=1, padx=20, pady=10, sticky="w")
 
         # Entries
-        self.label_tpl = ctk.CTkLabel(self.config_frame, text="Nom du Template :")
+        self.label_tpl = ctk.CTkLabel(self.config_frame, text=self.t['lbl_template_name'])
         self.label_tpl.grid(row=2, column=0, padx=20, pady=5, sticky="w")
-        self.entry_tpl_name = ctk.CTkEntry(self.config_frame, width=500, placeholder_text="Mon Equipement SNMP")
+        self.entry_tpl_name = ctk.CTkEntry(self.config_frame, width=500, placeholder_text=self.t['placeholder_template'])
         self.entry_tpl_name.grid(row=2, column=1, padx=20, pady=5, sticky="w")
-        self.entry_tpl_name.insert(0, "Mon Equipement SNMP")
+        self.entry_tpl_name.insert(0, self.t['placeholder_template'])
 
-        self.label_version = ctk.CTkLabel(self.config_frame, text="Version Zabbix :")
+        self.label_version = ctk.CTkLabel(self.config_frame, text=self.t['lbl_zabbix_version'])
         self.label_version.grid(row=3, column=0, padx=20, pady=5, sticky="w")
         self.entry_version = ctk.CTkEntry(self.config_frame, width=100)
         self.entry_version.grid(row=3, column=1, padx=20, pady=5, sticky="w")
         self.entry_version.insert(0, "7.0")
 
-        self.label_group = ctk.CTkLabel(self.config_frame, text="Groupe Zabbix :")
+        self.label_group = ctk.CTkLabel(self.config_frame, text=self.t['lbl_zabbix_group'])
         self.label_group.grid(row=4, column=0, padx=20, pady=5, sticky="w")
-        self.entry_group = ctk.CTkEntry(self.config_frame, width=500, placeholder_text="Templates/Network Devices")
+        self.entry_group = ctk.CTkEntry(self.config_frame, width=500, placeholder_text=self.t['placeholder_group'])
         self.entry_group.grid(row=4, column=1, padx=20, pady=5, sticky="w")
-        self.entry_group.insert(0, "Templates/Network Devices")
+        self.entry_group.insert(0, self.t['placeholder_group'])
 
-        self.label_oid = ctk.CTkLabel(self.config_frame, text="OID Racine (Base) :")
+        self.label_oid = ctk.CTkLabel(self.config_frame, text=self.t['lbl_base_oid'])
         self.label_oid.grid(row=5, column=0, padx=20, pady=5, sticky="w")
         self.entry_base_oid = ctk.CTkEntry(self.config_frame, width=500, placeholder_text="1.3.6.1.4.1.XXXX")
         self.entry_base_oid.grid(row=5, column=1, padx=20, pady=5, sticky="w")
         self.entry_base_oid.insert(0, "1.3.6.1.4.1.XXXX")
         self.entry_base_oid.bind("<KeyRelease>", self.update_oids)
         
-        self.lbl_help = ctk.CTkLabel(self.config_frame, text="(Ex: Pour Christie CP4415 -> .1.3.6.1.4.1.25766.1.12.1.157)", 
-                                     font=ctk.CTkFont(size=11), text_color="#3b8ed0")
+        self.lbl_help = ctk.CTkLabel(self.config_frame, text=self.t['lbl_help_oid'], 
+                                      font=ctk.CTkFont(size=11), text_color="#3b8ed0")
         self.lbl_help.grid(row=6, column=1, padx=20, pady=(0, 10), sticky="w")
 
         # --- Middle Section: List of items ---
@@ -226,17 +318,18 @@ class MibToZabbixApp(ctk.CTk):
         self.list_frame.grid_columnconfigure(0, weight=1)
         self.list_frame.grid_rowconfigure(1, weight=1)
 
-        self.list_header = ctk.CTkLabel(self.list_frame, text="Objets détectés (Sélectionnez pour inclure)", font=ctk.CTkFont(size=16, weight="bold"))
+        self.list_header = ctk.CTkLabel(self.list_frame, text=self.t['list_header'], font=ctk.CTkFont(size=16, weight="bold"))
         self.list_header.grid(row=0, column=0, padx=20, pady=10, sticky="w")
 
         # Search Bar (New)
         self.search_frame = ctk.CTkFrame(self.list_frame, fg_color="transparent")
         self.search_frame.grid(row=0, column=0, padx=(0, 20), pady=10, sticky="e")
         
-        self.entry_search = ctk.CTkEntry(self.search_frame, width=300, placeholder_text="Rechercher par nom ou description...")
+        self.entry_search = ctk.CTkEntry(self.search_frame, width=300, placeholder_text=self.t['search_placeholder'])
         self.entry_search.pack(side="right")
         self.entry_search.bind("<KeyRelease>", self.filter_items)
-        ctk.CTkLabel(self.search_frame, text="Rechercher : ").pack(side="right", padx=5)
+        self.lbl_search = ctk.CTkLabel(self.search_frame, text=self.t['search_label'])
+        self.lbl_search.pack(side="right", padx=5)
 
         # Treeview Scrollbar Container
         self.tree_container = tk.Frame(self.list_frame, background="#2b2b2b")
@@ -258,10 +351,10 @@ class MibToZabbixApp(ctk.CTk):
         columns = ("name", "oid", "syntax", "desc")
         self.tree = ttk.Treeview(self.tree_container, columns=columns, show='headings', selectmode="extended")
         
-        self.tree.heading("name", text="Nom de l'Objet")
-        self.tree.heading("oid", text="OID SNMP")
-        self.tree.heading("syntax", text="Type (Syntax)")
-        self.tree.heading("desc", text="Description")
+        self.tree.heading("name", text=self.t['col_name'])
+        self.tree.heading("oid", text=self.t['col_oid'])
+        self.tree.heading("syntax", text=self.t['col_syntax'])
+        self.tree.heading("desc", text=self.t['col_desc'])
         
         self.tree.column("name", width=250)
         self.tree.column("oid", width=250)
@@ -284,7 +377,7 @@ class MibToZabbixApp(ctk.CTk):
         self.action_frame = ctk.CTkFrame(self, corner_radius=10, fg_color="transparent")
         self.action_frame.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
 
-        self.btn_select_all = ctk.CTkButton(self.action_frame, text="TOUT SÉLECTIONNER", fg_color="gray", hover_color="#555555", command=self.select_all)
+        self.btn_select_all = ctk.CTkButton(self.action_frame, text=self.t['btn_select_all'], fg_color="gray", hover_color="#555555", command=self.select_all)
         self.btn_select_all.pack(side="left", padx=20)
 
         # Progress Bar (New)
@@ -293,13 +386,48 @@ class MibToZabbixApp(ctk.CTk):
         self.progress_bar.pack(side="left", padx=20)
         self.progress_bar.pack_forget() # Hidden by default
 
-        self.btn_generate = ctk.CTkButton(self.action_frame, text="AVANT-PROPOS & EXPORT", font=ctk.CTkFont(weight="bold"), 
+        self.btn_generate = ctk.CTkButton(self.action_frame, text=self.t['btn_preview_export'], font=ctk.CTkFont(weight="bold"), 
                                           fg_color="#28a745", hover_color="#218838", command=self.generate_yaml)
         self.btn_generate.pack(side="right", padx=20)
 
         # Version label (Bottom Right)
         self.lbl_version_footer = ctk.CTkLabel(self, text=f"v{APP_VERSION}", font=ctk.CTkFont(size=10), text_color="gray")
         self.lbl_version_footer.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-5)
+
+    def change_language(self, new_lang):
+        self.lang = new_lang
+        self.update_ui()
+
+    def update_ui(self):
+        self.t = TRANSLATIONS[self.lang]
+        self.title(f"{self.t['title_main']} - v{APP_VERSION}")
+        
+        # Config Frame
+        self.title_label.configure(text=self.t['config_header'])
+        self.btn_load.configure(text=self.t['btn_load'])
+        self.lbl_filename.configure(text=self.t['no_file'] if not self.mib_content else self.lbl_filename.cget("text"))
+        self.label_tpl.configure(text=self.t['lbl_template_name'])
+        self.entry_tpl_name.configure(placeholder_text=self.t['placeholder_template'])
+        self.label_version.configure(text=self.t['lbl_zabbix_version'])
+        self.label_group.configure(text=self.t['lbl_zabbix_group'])
+        self.entry_group.configure(placeholder_text=self.t['placeholder_group'])
+        self.label_oid.configure(text=self.t['lbl_base_oid'])
+        self.lbl_help.configure(text=self.t['lbl_help_oid'])
+        
+        # List Frame
+        self.list_header.configure(text=self.t['list_header'])
+        self.entry_search.configure(placeholder_text=self.t['search_placeholder'])
+        self.lbl_search.configure(text=self.t['search_label'])
+        
+        # Treeview
+        self.tree.heading("name", text=self.t['col_name'])
+        self.tree.heading("oid", text=self.t['col_oid'])
+        self.tree.heading("syntax", text=self.t['col_syntax'])
+        self.tree.heading("desc", text=self.t['col_desc'])
+        
+        # Action Frame
+        self.btn_select_all.configure(text=self.t['btn_select_all'])
+        self.btn_generate.configure(text=self.t['btn_preview_export'])
 
     def load_mib(self):
         filename = filedialog.askopenfilename(filetypes=[("MIB Files", "*.mib"), ("Text Files", "*.txt"), ("All Files", "*.*")])
@@ -313,7 +441,7 @@ class MibToZabbixApp(ctk.CTk):
                 self.mib_content = f.read()
             self.parse_mib()
         except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible de lire le fichier : {e}")
+            messagebox.showerror(self.t['msg_error'], f"Impossible de lire le fichier / Cannot read file : {e}")
 
     def parse_mib(self):
         """
@@ -388,9 +516,9 @@ class MibToZabbixApp(ctk.CTk):
         self.entry_base_oid.delete(0, tk.END)
         self.entry_base_oid.insert(0, suggested_root)
         if "XXXX" not in suggested_root:
-            self.lbl_help.configure(text=f"(OID Racine détecté : {suggested_root})", text_color="#28a745")
+            self.lbl_help.configure(text=f"({self.t['lbl_detected_root']} {suggested_root})", text_color="#28a745")
         else:
-            self.lbl_help.configure(text=f"(Racine non détectée, veuillez la saisir)", text_color="#3b8ed0")
+            self.lbl_help.configure(text=f"({self.t['lbl_no_root']})", text_color="#3b8ed0")
 
         # --- Fin Détection ---
         pattern = re.compile(
@@ -404,7 +532,7 @@ class MibToZabbixApp(ctk.CTk):
         matches = pattern.findall(self.mib_content)
         
         if not matches:
-            messagebox.showwarning("Attention", "Aucun objet 'OBJECT-TYPE' standard trouvé.")
+            messagebox.showwarning(self.t['msg_warn'], "Aucun objet 'OBJECT-TYPE' standard trouvé / No standard objects found.")
             return
 
         count = 0
@@ -427,7 +555,7 @@ class MibToZabbixApp(ctk.CTk):
             })
             count += 1
             
-        messagebox.showinfo("Succès", f"{count} objets trouvés dans la MIB.")
+        messagebox.showinfo(self.t['msg_success'], f"{count} {self.t['msg_mib_success']}")
 
     def select_all(self):
         children = self.tree.get_children()
@@ -472,7 +600,7 @@ class MibToZabbixApp(ctk.CTk):
     def generate_yaml(self):
         selected_ids = self.tree.selection()
         if not selected_ids:
-            messagebox.showwarning("Attention", "Veuillez sélectionner au moins un objet dans la liste.")
+            messagebox.showwarning(self.t['msg_warn'], self.t['msg_no_selection'])
             return
 
         base_oid = self.entry_base_oid.get().strip()
@@ -481,7 +609,7 @@ class MibToZabbixApp(ctk.CTk):
         zabbix_version = self.entry_version.get().strip()
 
         if "XXXX" in base_oid or base_oid == "":
-            messagebox.showerror("Erreur", "Veuillez définir l'OID Racine.")
+            messagebox.showerror(self.t['msg_error'], self.t['msg_no_root'])
             return
 
         # Start Progress Bar
@@ -501,7 +629,7 @@ class MibToZabbixApp(ctk.CTk):
                 items_to_preview.append(self.parsed_items[int(iid)])
 
             # Open Preview Window
-            preview = PreviewWindow(self, items_to_preview, base_oid, template_name, group_name, zabbix_version)
+            preview = PreviewWindow(self, items_to_preview, base_oid, template_name, group_name, zabbix_version, lang=self.lang)
             preview.focus()
             
             # Reset UI
