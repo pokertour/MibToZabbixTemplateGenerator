@@ -8,7 +8,7 @@ import os
 import time
 from collections import Counter
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 TRANSLATIONS = {
     "FR": {
@@ -131,7 +131,7 @@ class PreviewWindow(ctk.CTkToplevel):
             frame.pack(fill="x", padx=5, pady=5)
             
             # OID Label
-            full_oid = f"{self.base_oid}.{item['suffix']}.0"
+            full_oid = item.get('resolved_oid', f"{self.base_oid}.{item['suffix']}.0")
             ctk.CTkLabel(frame, text=f"OID: {full_oid}", font=ctk.CTkFont(size=11, weight="bold"), text_color="#3b8ed0").grid(row=0, column=0, columnspan=2, padx=10, pady=(5,0), sticky="w")
 
             # Name
@@ -162,6 +162,7 @@ class PreviewWindow(ctk.CTkToplevel):
                 "item_id": item['id'],
                 "suffix": item['suffix'],
                 "syntax": item['syntax'],
+                "resolved_oid": item.get('resolved_oid'),
                 "name_entry": name_entry,
                 "key_entry": key_entry,
                 "desc_entry": desc_entry,
@@ -204,7 +205,14 @@ class PreviewWindow(ctk.CTkToplevel):
             desc = w['desc_entry'].get()
             tags_raw = w['tags_entry'].get()
             
-            full_oid = f"{self.base_oid}.{w['suffix']}.0"
+            # Utiliser l'OID résolu ou affiché
+            full_oid = w.get('resolved_oid')
+            if not full_oid:
+                full_oid = f"{self.base_oid}.{w['suffix']}.0"
+            
+            # Si l'OID contient encore XXXX, on essaie de le remplacer par la base OID actuelle (cas du fallback)
+            if ".1.3.6.1.4.1.XXXX" in full_oid:
+                 full_oid = full_oid.replace(".1.3.6.1.4.1.XXXX", self.base_oid)
             
             # Parse tags
             zbx_tags = []
@@ -463,64 +471,62 @@ class MibToZabbixApp(ctk.CTk):
         # --- Détection Robuste de l'OID Racine ---
         # 1. Dictionnaire des identifiants OID connus
         known_oids = {
-            "iso": "1",
-            "org": "1.3",
-            "dod": "1.3.6",
-            "internet": "1.3.6.1",
-            "directory": "1.3.6.1.1",
-            "mgmt": "1.3.6.1.2",
-            "mib-2": "1.3.6.1.2.1",
-            "transmission": "1.3.6.1.2.1.10",
-            "experimental": "1.3.6.1.3",
-            "private": "1.3.6.1.4",
-            "enterprises": "1.3.6.1.4.1",
-            "security": "1.3.6.1.5",
-            "snmpv2": "1.3.6.1.6",
-            "snmpModules": "1.3.6.1.6.3",
+            "iso": ".1",
+            "org": ".1.3",
+            "dod": ".1.3.6",
+            "internet": ".1.3.6.1",
+            "directory": ".1.3.6.1.1",
+            "mgmt": ".1.3.6.1.2",
+            "mib-2": ".1.3.6.1.2.1",
+            "transmission": ".1.3.6.1.2.1.10",
+            "experimental": ".1.3.6.1.3",
+            "private": ".1.3.6.1.4",
+            "enterprises": ".1.3.6.1.4.1",
+            "security": ".1.3.6.1.5",
+            "snmpv2": ".1.3.6.1.6",
+            "snmpModules": ".1.3.6.1.6.3",
         }
 
-        # 2. Extraire tous les OBJECT IDENTIFIER et MODULE-IDENTITY
-        # Format: nom OBJECT IDENTIFIER ::= { parent 123 } ou { 1 2 3 }
-        id_pattern = re.compile(r'(\w+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY).*?::=\s+\{\s*(.*?)\s*\}', re.DOTALL | re.IGNORECASE)
-        found_ids = id_pattern.findall(self.mib_content)
+        # 2. Extraire tous les IDENTIFIANTS (OBJECT IDENTIFIER, MODULE-IDENTITY et OBJECT-TYPE pour la hiérarchie)
+        # On utilise MULTILINE et ^ pour s'assurer de capturer le début du nom de l'objet
+        hierarchy_pattern = re.compile(r'^([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY|OBJECT-TYPE).*?::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        all_definitions = hierarchy_pattern.findall(self.mib_content)
         
-        # On fait plusieurs passes pour résoudre les dépendances
-        for _ in range(5):
-            for name, content in found_ids:
-                parts = content.split()
-                if not parts: continue
-                
-                # Cas 1: { 1 2 3 } (full numeric)
-                if parts[0].isdigit():
-                    known_oids[name] = ".".join(parts)
-                # Cas 2: { parent 123 }
-                elif parts[0] in known_oids:
-                    parent_val = known_oids[parts[0]]
-                    suffix = ".".join(parts[1:])
-                    known_oids[name] = f"{parent_val}.{suffix}"
+        # On ajoute aussi les définitions de type { 1 2 3 }
+        full_numeric_pattern = re.compile(r'^([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY).*?::=\s+\{\s*([\d\s]+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        numeric_definitions = full_numeric_pattern.findall(self.mib_content)
+        for name, content in numeric_definitions:
+            oid_val = "." + ".".join(content.split())
+            known_oids[name] = oid_val
+
+        # On fait plusieurs passes pour résoudre les dépendances (jusqu'à ce que plus rien ne bouge ou max 20 passes pour MIB complexes)
+        for _ in range(20):
+            changed = False
+            for name, parent, suffix in all_definitions:
+                if name not in known_oids:
+                    if parent in known_oids:
+                        known_oids[name] = f"{known_oids[parent]}.{suffix}"
+                        changed = True
+                elif not known_oids[name].startswith("."): # Tenter de compléter si non absolu
+                     if parent in known_oids and known_oids[parent].startswith("."):
+                        known_oids[name] = f"{known_oids[parent]}.{suffix}"
+                        changed = True
+            if not changed: break
 
         # 3. Trouver le point de départ le plus probable pour le template
-        # On cherche l'OID le plus long qui n'est pas un OBJECT-TYPE
-        # Mais on privilégie ceux qui sont "parents" dans le fichier
-        suggested_root = "1.3.6.1.4.1.XXXX"
+        # On cherche l'OID d'entreprise le plus long
+        suggested_root = ".1.3.6.1.4.1.XXXX"
         
-        # On récupère tous les parents cités dans les OBJECT-TYPE ::= { PARENT suffix }
-        parent_usage_pattern = re.compile(r'::=\s+\{\s*([\w\d\-]+)\s+\d+\s*\}')
-        all_parents = parent_usage_pattern.findall(self.mib_content)
+        # On cherche un OID qui ressemble à une racine d'entreprise (1.3.6.1.4.1.N)
+        potential_roots = []
+        for val in known_oids.values():
+            if val.startswith(".1.3.6.1.4.1."):
+                parts = val.split('.')
+                if len(parts) >= 7: # . 1 3 6 1 4 1 N
+                    potential_roots.append(".".join(parts[:8])) # Jusqu'au 14988 par exemple
         
-        if all_parents:
-            # On prend le parent le plus fréquent qui est dans known_oids
-            from collections import Counter
-            most_common_parent = Counter(all_parents).most_common(1)[0][0]
-            if most_common_parent in known_oids:
-                suggested_root = known_oids[most_common_parent]
-
-        # Si toujours pas trouvé, on tente de trouver au moins une racine d'entreprise
-        if "XXXX" in suggested_root:
-            for name, val in known_oids.items():
-                if val.startswith("1.3.6.1.4.1.") and len(val.split('.')) > 6:
-                    suggested_root = val
-                    break
+        if potential_roots:
+            suggested_root = Counter(potential_roots).most_common(1)[0][0]
 
         self.entry_base_oid.delete(0, tk.END)
         self.entry_base_oid.insert(0, suggested_root)
@@ -531,11 +537,11 @@ class MibToZabbixApp(ctk.CTk):
 
         # --- Fin Détection ---
         pattern = re.compile(
-            r'(\w+)\s+OBJECT-TYPE\s+.*?'
+            r'^([\w\d\-]+)\s+OBJECT-TYPE\s+.*?'
             r'SYNTAX\s+(.*?)\s+(?:MAX-ACCESS|ACCESS)\s+.*?'
             r'DESCRIPTION\s+"(.*?)"\s+.*?'
-            r'::=\s+\{\s*[\w\d\-]+\s+(\d+)\s*\}',
-            re.DOTALL | re.IGNORECASE
+            r'::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}',
+            re.DOTALL | re.IGNORECASE | re.MULTILINE
         )
 
         matches = pattern.findall(self.mib_content)
@@ -545,23 +551,35 @@ class MibToZabbixApp(ctk.CTk):
             return
 
         count = 0
-        base_oid = self.entry_base_oid.get().strip()
-        for name, syntax, desc, suffix in matches:
+        base_oid_ui = self.entry_base_oid.get().strip()
+        for name, syntax, desc, parent, suffix in matches:
             desc_clean = " ".join(desc.split())
             syntax_clean = syntax.strip()
             
             if "SEQUENCE" in syntax_clean:
                 continue
 
-            full_oid = f"{base_oid}.{suffix}.0"
+            # Résolution de l'OID de l'item
+            if name in known_oids and known_oids[name].startswith("."):
+                full_oid = f"{known_oids[name]}.0"
+            elif parent in known_oids and known_oids[parent].startswith("."):
+                full_oid = f"{known_oids[parent]}.{suffix}.0"
+            else:
+                # Fallback sur la base OID de l'UI si on n'a pas pu résoudre le parent
+                # On essaie quand même de voir si le parent est connu mais non absolu
+                p_val = known_oids.get(parent, parent)
+                full_oid = f"{base_oid_ui}.{suffix}.0" # Comportement par défaut (simple)
+            
             self.tree.insert("", "end", iid=count, values=("☐", name, full_oid, syntax_clean, desc_clean))
             self.parsed_items.append({
                 "id": count,
                 "selected": False,
                 "name": name,
+                "parent": parent,
                 "suffix": suffix,
                 "syntax": syntax_clean,
-                "desc": desc_clean
+                "desc": desc_clean,
+                "resolved_oid": full_oid
             })
             count += 1
             
@@ -611,12 +629,23 @@ class MibToZabbixApp(ctk.CTk):
 
     def update_oids(self, event=None):
         base_oid = self.entry_base_oid.get().strip()
+        if base_oid and not base_oid.startswith("."):
+            base_oid = "." + base_oid
+            self.entry_base_oid.delete(0, tk.END)
+            self.entry_base_oid.insert(0, base_oid)
+        
         for item_id_str in self.tree.get_children():
             try:
                 item_id = int(item_id_str)
                 if item_id < len(self.parsed_items):
-                    suffix = self.parsed_items[item_id]['suffix']
-                    full_oid = f"{base_oid}.{suffix}.0"
+                    item_data = self.parsed_items[item_id]
+                    # Si l'OID d'origine était déjà absolu et résolu, on le garde
+                    # Sinon on recalcule par rapport à la base OID (sauf si c'est XXXX)
+                    if item_data.get('resolved_oid', '').startswith(".") and ".1.3.6.1.4.1.XXXX" not in item_data.get('resolved_oid', ''):
+                        full_oid = item_data['resolved_oid']
+                    else:
+                        full_oid = f"{base_oid}.{item_data['suffix']}.0"
+                        
                     values = list(self.tree.item(item_id_str, "values"))
                     values[2] = full_oid
                     self.tree.item(item_id_str, values=values)
@@ -634,7 +663,9 @@ class MibToZabbixApp(ctk.CTk):
         # Re-insert only matching items
         for item in self.parsed_items:
             if query in item['name'].lower() or query in item['desc'].lower():
-                full_oid = f"{base_oid}.{item['suffix']}.0"
+                # On récupère l'OID actuellement affiché dans le treeview pour la cohérence
+                # Ou on le recalcule si besoin (mieux vaut stocker l'OID actuel)
+                full_oid = item.get('resolved_oid', f"{base_oid}.{item['suffix']}.0")
                 checkbox = "☑" if item['selected'] else "☐"
                 self.tree.insert("", "end", iid=item['id'], values=(checkbox, item['name'], full_oid, item['syntax'], item['desc']))
 
@@ -653,6 +684,11 @@ class MibToZabbixApp(ctk.CTk):
             return
 
         base_oid = self.entry_base_oid.get().strip()
+        if base_oid and not base_oid.startswith("."):
+            base_oid = "." + base_oid
+            self.entry_base_oid.delete(0, tk.END)
+            self.entry_base_oid.insert(0, base_oid)
+
         template_name = self.entry_tpl_name.get().strip()
         group_name = self.entry_group.get().strip()
         zabbix_version = self.entry_version.get().strip()
