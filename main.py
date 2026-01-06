@@ -8,7 +8,7 @@ import os
 import time
 from collections import Counter
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 TRANSLATIONS = {
     "FR": {
@@ -34,6 +34,8 @@ TRANSLATIONS = {
         "col_syntax": "Type (Syntax)",
         "col_desc": "Description",
         "btn_select_all": "TOUT SÉLECTIONNER",
+        "btn_deselect_all": "TOUT DÉSELECTIONNER",
+        "col_select": "Sél.",
         "btn_preview_export": "AVANT-PROPOS & EXPORT",
         "msg_error": "Erreur",
         "msg_warn": "Attention",
@@ -73,6 +75,8 @@ TRANSLATIONS = {
         "col_syntax": "Type (Syntax)",
         "col_desc": "Description",
         "btn_select_all": "SELECT ALL",
+        "btn_deselect_all": "DESELECT ALL",
+        "col_select": "Sel.",
         "btn_preview_export": "PREVIEW & EXPORT",
         "msg_error": "Error",
         "msg_warn": "Warning",
@@ -348,18 +352,22 @@ class MibToZabbixApp(ctk.CTk):
         style.map("Treeview", background=[('selected', '#3b8ed0')])
         style.configure("Treeview.Heading", background="#333333", foreground="white", borderwidth=0)
 
-        columns = ("name", "oid", "syntax", "desc")
-        self.tree = ttk.Treeview(self.tree_container, columns=columns, show='headings', selectmode="extended")
+        columns = ("selection", "name", "oid", "syntax", "desc")
+        self.tree = ttk.Treeview(self.tree_container, columns=columns, show='headings', selectmode="browse")
         
+        self.tree.heading("selection", text=self.t['col_select'])
         self.tree.heading("name", text=self.t['col_name'])
         self.tree.heading("oid", text=self.t['col_oid'])
         self.tree.heading("syntax", text=self.t['col_syntax'])
         self.tree.heading("desc", text=self.t['col_desc'])
         
+        self.tree.column("selection", width=40, anchor="center")
         self.tree.column("name", width=250)
         self.tree.column("oid", width=250)
         self.tree.column("syntax", width=150)
         self.tree.column("desc", width=600)
+
+        self.tree.bind("<ButtonRelease-1>", self.on_tree_click)
 
         # Vertical Scrollbar
         self.v_scrollbar = ctk.CTkScrollbar(self.tree_container, orientation="vertical", command=self.tree.yview)
@@ -420,6 +428,7 @@ class MibToZabbixApp(ctk.CTk):
         self.lbl_search.configure(text=self.t['search_label'])
         
         # Treeview
+        self.tree.heading("selection", text=self.t['col_select'])
         self.tree.heading("name", text=self.t['col_name'])
         self.tree.heading("oid", text=self.t['col_oid'])
         self.tree.heading("syntax", text=self.t['col_syntax'])
@@ -545,9 +554,10 @@ class MibToZabbixApp(ctk.CTk):
                 continue
 
             full_oid = f"{base_oid}.{suffix}.0"
-            self.tree.insert("", "end", iid=count, values=(name, full_oid, syntax_clean, desc_clean))
+            self.tree.insert("", "end", iid=count, values=("☐", name, full_oid, syntax_clean, desc_clean))
             self.parsed_items.append({
                 "id": count,
+                "selected": False,
                 "name": name,
                 "suffix": suffix,
                 "syntax": syntax_clean,
@@ -558,8 +568,46 @@ class MibToZabbixApp(ctk.CTk):
         messagebox.showinfo(self.t['msg_success'], f"{count} {self.t['msg_mib_success']}")
 
     def select_all(self):
-        children = self.tree.get_children()
-        self.tree.selection_set(children)
+        # Toggle based on first item if exists
+        if not self.parsed_items:
+            return
+            
+        all_selected = all(item['selected'] for item in self.parsed_items)
+        new_state = not all_selected
+        
+        for item in self.parsed_items:
+            item['selected'] = new_state
+            
+        self.filter_items() # Refresh display
+        
+        self.btn_select_all.configure(text=self.t['btn_deselect_all'] if new_state else self.t['btn_select_all'])
+
+    def on_tree_click(self, event):
+        region = self.tree.identify("region", event.x, event.y)
+        if region == "heading":
+            return
+            
+        item_id_str = self.tree.identify_row(event.y)
+        if not item_id_str:
+            return
+            
+        column = self.tree.identify_column(event.x)
+        
+        # Toggle only if clicking the selection column (column #1)
+        if column == "#1":
+            try:
+                iid = int(item_id_str)
+                # Find the item in parsed_items
+                item_data = next((item for item in self.parsed_items if item['id'] == iid), None)
+                if item_data:
+                    item_data['selected'] = not item_data['selected']
+                    
+                    # Update Treeview row
+                    values = list(self.tree.item(item_id_str, "values"))
+                    values[0] = "☑" if item_data['selected'] else "☐"
+                    self.tree.item(item_id_str, values=values)
+            except (ValueError, StopIteration):
+                pass
 
     def update_oids(self, event=None):
         base_oid = self.entry_base_oid.get().strip()
@@ -570,7 +618,7 @@ class MibToZabbixApp(ctk.CTk):
                     suffix = self.parsed_items[item_id]['suffix']
                     full_oid = f"{base_oid}.{suffix}.0"
                     values = list(self.tree.item(item_id_str, "values"))
-                    values[1] = full_oid
+                    values[2] = full_oid
                     self.tree.item(item_id_str, values=values)
             except (ValueError, IndexError, UnboundLocalError):
                 continue
@@ -587,7 +635,8 @@ class MibToZabbixApp(ctk.CTk):
         for item in self.parsed_items:
             if query in item['name'].lower() or query in item['desc'].lower():
                 full_oid = f"{base_oid}.{item['suffix']}.0"
-                self.tree.insert("", "end", iid=item['id'], values=(item['name'], full_oid, item['syntax'], item['desc']))
+                checkbox = "☑" if item['selected'] else "☐"
+                self.tree.insert("", "end", iid=item['id'], values=(checkbox, item['name'], full_oid, item['syntax'], item['desc']))
 
     def get_zabbix_type(self, syntax_str):
         s = syntax_str.lower()
@@ -598,8 +647,8 @@ class MibToZabbixApp(ctk.CTk):
         return "TEXT"
 
     def generate_yaml(self):
-        selected_ids = self.tree.selection()
-        if not selected_ids:
+        selected_items = [item for item in self.parsed_items if item['selected']]
+        if not selected_items:
             messagebox.showwarning(self.t['msg_warn'], self.t['msg_no_selection'])
             return
 
@@ -624,18 +673,21 @@ class MibToZabbixApp(ctk.CTk):
                 time.sleep(0.05)
             
             # Prepare selected items data
-            items_to_preview = []
-            for iid in selected_ids:
-                items_to_preview.append(self.parsed_items[int(iid)])
+            items_to_preview = selected_items
 
-            # Open Preview Window
-            preview = PreviewWindow(self, items_to_preview, base_oid, template_name, group_name, zabbix_version, lang=self.lang)
-            preview.focus()
-            
-            # Reset UI
+            # Reset UI before opening window to avoid stealing focus
             self.progress_bar.set(0)
             self.progress_bar.pack_forget()
             self.btn_generate.configure(state="normal")
+
+            # Open Preview Window
+            preview = PreviewWindow(self, items_to_preview, base_oid, template_name, group_name, zabbix_version, lang=self.lang)
+            
+            # Force focus and lift
+            preview.lift()
+            preview.focus_force()
+            preview.attributes("-topmost", True)
+            preview.after(100, lambda: preview.attributes("-topmost", False)) # Keep it on top briefly
 
         # Delay opening slightly to let the animation show
         self.after(100, start_preview)
