@@ -8,7 +8,7 @@ import os
 import time
 from collections import Counter
 
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 TRANSLATIONS = {
     "FR": {
@@ -489,11 +489,11 @@ class MibToZabbixApp(ctk.CTk):
 
         # 2. Extraire tous les IDENTIFIANTS (OBJECT IDENTIFIER, MODULE-IDENTITY et OBJECT-TYPE pour la hiérarchie)
         # On utilise MULTILINE et ^ pour s'assurer de capturer le début du nom de l'objet
-        hierarchy_pattern = re.compile(r'^([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY|OBJECT-TYPE).*?::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        hierarchy_pattern = re.compile(r'^\s*([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY|OBJECT-TYPE).*?::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
         all_definitions = hierarchy_pattern.findall(self.mib_content)
         
         # On ajoute aussi les définitions de type { 1 2 3 }
-        full_numeric_pattern = re.compile(r'^([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY).*?::=\s+\{\s*([\d\s]+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        full_numeric_pattern = re.compile(r'^\s*([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY).*?::=\s+\{\s*([\d\s]+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
         numeric_definitions = full_numeric_pattern.findall(self.mib_content)
         for name, content in numeric_definitions:
             oid_val = "." + ".".join(content.split())
@@ -537,7 +537,7 @@ class MibToZabbixApp(ctk.CTk):
 
         # --- Fin Détection ---
         pattern = re.compile(
-            r'^([\w\d\-]+)\s+OBJECT-TYPE\s+.*?'
+            r'^\s*([\w\d\-]+)\s+OBJECT-TYPE\s+.*?'
             r'SYNTAX\s+(.*?)\s+(?:MAX-ACCESS|ACCESS)\s+.*?'
             r'DESCRIPTION\s+"(.*?)"\s+.*?'
             r'::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}',
