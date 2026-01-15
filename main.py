@@ -8,7 +8,7 @@ import os
 import time
 from collections import Counter
 
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 
 TRANSLATIONS = {
     "FR": {
@@ -21,8 +21,9 @@ TRANSLATIONS = {
         "placeholder_template": "Mon Equipement SNMP",
         "lbl_zabbix_version": "Version Zabbix :",
         "lbl_zabbix_group": "Groupe Zabbix :",
-        "placeholder_group": "Templates/Network Devices",
+        "placeholder_group": "Templates",
         "lbl_base_oid": "OID Racine (Base) :",
+        "lbl_delay": "Intervalle d'actualisation :",
         "lbl_help_oid": "(Ex: Pour Christie CP4415 -> .1.3.6.1.4.1.25766.1.12.1.157)",
         "lbl_detected_root": "OID Racine détecté :",
         "lbl_no_root": "Racine non détectée, veuillez la saisir",
@@ -62,8 +63,9 @@ TRANSLATIONS = {
         "placeholder_template": "My SNMP Device",
         "lbl_zabbix_version": "Zabbix Version:",
         "lbl_zabbix_group": "Zabbix Group:",
-        "placeholder_group": "Templates/Network Devices",
+        "placeholder_group": "Templates",
         "lbl_base_oid": "Root OID (Base):",
+        "lbl_delay": "Update interval:",
         "lbl_help_oid": "(Ex: For Christie CP4415 -> .1.3.6.1.4.1.25766.1.12.1.157)",
         "lbl_detected_root": "Root OID detected:",
         "lbl_no_root": "Root not detected, please enter manually",
@@ -100,7 +102,7 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 class PreviewWindow(ctk.CTkToplevel):
-    def __init__(self, parent, selected_items, base_oid, template_name, group_name, zabbix_version, lang="FR"):
+    def __init__(self, parent, selected_items, base_oid, template_name, group_name, zabbix_version, default_delay="8h", lang="FR"):
         super().__init__(parent)
         self.lang = lang
         self.t = TRANSLATIONS[lang]
@@ -112,6 +114,7 @@ class PreviewWindow(ctk.CTkToplevel):
         self.template_name = template_name
         self.group_name = group_name
         self.zabbix_version = zabbix_version
+        self.default_delay = default_delay
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -144,7 +147,10 @@ class PreviewWindow(ctk.CTkToplevel):
             ctk.CTkLabel(frame, text=self.t['lbl_key']).grid(row=1, column=2, padx=5, pady=5, sticky="e")
             key_entry = ctk.CTkEntry(frame, width=250)
             key_entry.grid(row=1, column=3, padx=5, pady=5, sticky="w")
-            key_entry.insert(0, f"snmp.{item['name'].lower()}")
+            
+            # Default key for traps vs items
+            default_key = f"snmptrap[{item['name'].lower()}]" if item.get('is_trap') else f"snmp.{item['name'].lower()}"
+            key_entry.insert(0, default_key)
             
             # Description
             ctk.CTkLabel(frame, text=self.t['lbl_desc']).grid(row=2, column=0, padx=5, pady=5, sticky="e")
@@ -152,21 +158,29 @@ class PreviewWindow(ctk.CTkToplevel):
             desc_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
             desc_entry.insert(0, item['desc'])
 
-            # Tags (New)
+            # Tags
             ctk.CTkLabel(frame, text=self.t['lbl_tags']).grid(row=2, column=2, padx=5, pady=5, sticky="e")
             tags_entry = ctk.CTkEntry(frame, width=300, placeholder_text="component:mib-import, device:snmp")
             tags_entry.grid(row=2, column=3, padx=5, pady=5, sticky="w")
             tags_entry.insert(0, "component:mib-import")
+
+            # Delay
+            ctk.CTkLabel(frame, text="Delay:").grid(row=1, column=4, padx=5, pady=5, sticky="e")
+            delay_entry = ctk.CTkEntry(frame, width=80)
+            delay_entry.grid(row=1, column=5, padx=5, pady=5, sticky="w")
+            delay_entry.insert(0, self.default_delay)
             
             self.item_widgets.append({
                 "item_id": item['id'],
                 "suffix": item['suffix'],
                 "syntax": item['syntax'],
+                "is_trap": item.get('is_trap', False),
                 "resolved_oid": item.get('resolved_oid'),
                 "name_entry": name_entry,
                 "key_entry": key_entry,
                 "desc_entry": desc_entry,
-                "tags_entry": tags_entry
+                "tags_entry": tags_entry,
+                "delay_entry": delay_entry
             })
 
         # Actions
@@ -204,6 +218,7 @@ class PreviewWindow(ctk.CTkToplevel):
             key = w['key_entry'].get()
             desc = w['desc_entry'].get()
             tags_raw = w['tags_entry'].get()
+            delay = w['delay_entry'].get() or self.default_delay
             
             # Utiliser l'OID résolu ou affiché
             full_oid = w.get('resolved_oid')
@@ -226,10 +241,10 @@ class PreviewWindow(ctk.CTkToplevel):
             zbx_item = {
                 "uuid": str(uuid.uuid4()).replace('-', ''),
                 "name": name,
-                "type": "SNMP_AGENT",
+                "type": "SNMP_TRAP" if w.get('is_trap') else "SNMP_AGENT",
                 "snmp_oid": full_oid,
                 "key": key,
-                "delay": "1m",
+                "delay": delay,
                 "history": "7d",
                 "trends": "90d",
                 "value_type": self.parent.get_zabbix_type(w['syntax']),
@@ -246,12 +261,20 @@ class PreviewWindow(ctk.CTkToplevel):
                 
             zbx_template["zabbix_export"]["templates"][0]["items"].append(zbx_item)
 
-        file_path = filedialog.asksaveasfilename(defaultextension=".yaml", filetypes=[("YAML files", "*.yaml")])
+        # Suggest a safe filename based on template name
+        suggested_filename = re.sub(r'[^\w\d-]', '_', self.template_name) + ".yaml"
+
+        file_path = filedialog.asksaveasfilename(
+            parent=self,
+            initialfile=suggested_filename,
+            defaultextension=".yaml", 
+            filetypes=[("YAML files", "*.yaml")]
+        )
         if file_path:
             with open(file_path, 'w', encoding='utf-8') as f:
                 yaml.dump(zbx_template, f, sort_keys=False, allow_unicode=True)
             
-            messagebox.showinfo(self.t['msg_success'], self.t['msg_saved'])
+            messagebox.showinfo(self.t['msg_success'], self.t['msg_saved'], parent=self)
             self.destroy()
 
 class MibToZabbixApp(ctk.CTk):
@@ -267,6 +290,7 @@ class MibToZabbixApp(ctk.CTk):
         # Variables
         self.mib_content = ""
         self.parsed_items = []
+        self.last_clicked_id = None
         
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -306,6 +330,12 @@ class MibToZabbixApp(ctk.CTk):
         self.entry_version = ctk.CTkEntry(self.config_frame, width=100)
         self.entry_version.grid(row=3, column=1, padx=20, pady=5, sticky="w")
         self.entry_version.insert(0, "7.0")
+
+        self.label_delay = ctk.CTkLabel(self.config_frame, text=self.t['lbl_delay'])
+        self.label_delay.grid(row=3, column=1, padx=(150, 20), pady=5, sticky="w")
+        self.entry_delay = ctk.CTkEntry(self.config_frame, width=100)
+        self.entry_delay.grid(row=3, column=1, padx=(320, 20), pady=5, sticky="w")
+        self.entry_delay.insert(0, "8h")
 
         self.label_group = ctk.CTkLabel(self.config_frame, text=self.t['lbl_zabbix_group'])
         self.label_group.grid(row=4, column=0, padx=20, pady=5, sticky="w")
@@ -427,6 +457,7 @@ class MibToZabbixApp(ctk.CTk):
         self.label_version.configure(text=self.t['lbl_zabbix_version'])
         self.label_group.configure(text=self.t['lbl_zabbix_group'])
         self.entry_group.configure(placeholder_text=self.t['placeholder_group'])
+        self.label_delay.configure(text=self.t['lbl_delay'])
         self.label_oid.configure(text=self.t['lbl_base_oid'])
         self.lbl_help.configure(text=self.t['lbl_help_oid'])
         
@@ -467,6 +498,7 @@ class MibToZabbixApp(ctk.CTk):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.parsed_items = []
+        self.last_clicked_id = None
 
         # --- Détection Robuste de l'OID Racine ---
         # 1. Dictionnaire des identifiants OID connus
@@ -487,9 +519,16 @@ class MibToZabbixApp(ctk.CTk):
             "snmpModules": ".1.3.6.1.6.3",
         }
 
+        # --- NOUVEAU: Extraction des OIDs depuis les commentaires (style Barco) ---
+        # Cherche "-- 1.3.6..." suivi par le nom de l'objet sur la ligne suivante
+        comment_oid_pattern = re.compile(r'--\s+([\d\.]+)\s*\n\s*([\w\d\-]+)', re.MULTILINE)
+        for oid_val, name in comment_oid_pattern.findall(self.mib_content):
+            if not oid_val.startswith("."):
+                oid_val = "." + oid_val
+            known_oids[name] = oid_val
+
         # 2. Extraire tous les IDENTIFIANTS (OBJECT IDENTIFIER, MODULE-IDENTITY et OBJECT-TYPE pour la hiérarchie)
-        # On utilise MULTILINE et ^ pour s'assurer de capturer le début du nom de l'objet
-        hierarchy_pattern = re.compile(r'^\s*([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY|OBJECT-TYPE).*?::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        hierarchy_pattern = re.compile(r'^\s*([\w\d\-]+)\s+(?:OBJECT IDENTIFIER|MODULE-IDENTITY|OBJECT-TYPE|OBJECT-IDENTITY).*?::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}', re.DOTALL | re.IGNORECASE | re.MULTILINE)
         all_definitions = hierarchy_pattern.findall(self.mib_content)
         
         # On ajoute aussi les définitions de type { 1 2 3 }
@@ -536,39 +575,59 @@ class MibToZabbixApp(ctk.CTk):
             self.lbl_help.configure(text=f"({self.t['lbl_no_root']})", text_color="#3b8ed0")
 
         # --- Fin Détection ---
-        pattern = re.compile(
+        
+        # Pattern pour OBJECT-TYPE (Items)
+        # Amélioré pour capturer SYNTAX sur plusieurs lignes (ex: BITS)
+        # Support des OIDs à plusieurs niveaux ::= { parent 1 2 }
+        item_pattern = re.compile(
             r'^\s*([\w\d\-]+)\s+OBJECT-TYPE\s+.*?'
             r'SYNTAX\s+(.*?)\s+(?:MAX-ACCESS|ACCESS)\s+.*?'
-            r'DESCRIPTION\s+"(.*?)"\s+.*?'
-            r'::=\s+\{\s*([\w\d\-]+)\s+(\d+)\s*\}',
+            r'DESCRIPTION\s+\"(.*?)\"\s+.*?'
+            r'::=\s+\{\s*([\w\d\-]+)\s+([\d\s]+)\s*\}',
             re.DOTALL | re.IGNORECASE | re.MULTILINE
         )
 
-        matches = pattern.findall(self.mib_content)
+        # Pattern pour NOTIFICATION-TYPE / TRAP-TYPE (Traps)
+        # Gestion des styles SNMPv1 (TRAP-TYPE) et SNMPv2 (NOTIFICATION-TYPE)
+        # Très flexible sur ce qui se trouve entre la description et l'OID
+        # Support des OIDs à plusieurs niveaux ::= { parent 1 2 }
+        trap_pattern = re.compile(
+            r'^\s*([\w\d\-]+)\s+(?:NOTIFICATION-TYPE|TRAP-TYPE)\s+.*?'
+            r'(?:ENTERPRISE\s+([\w\d\-]+)\s+)?'
+            r'(?:(?:OBJECTS|VARIABLES)\s+\{(.*?)\}\s+)?'
+            r'DESCRIPTION\s+\"(.*?)\".*?'
+            r'::=\s+(?:\{\s*([\w\d\-]+)\s+([\d\s]+)\s*\}|(\d+))',
+            re.DOTALL | re.IGNORECASE | re.MULTILINE
+        )
+
+        matches_items = item_pattern.findall(self.mib_content)
+        matches_traps = trap_pattern.findall(self.mib_content)
         
-        if not matches:
-            messagebox.showwarning(self.t['msg_warn'], "Aucun objet 'OBJECT-TYPE' standard trouvé / No standard objects found.")
+        if not matches_items and not matches_traps:
+            messagebox.showwarning(self.t['msg_warn'], "Aucun objet standard trouvé / No standard objects found.")
             return
 
         count = 0
         base_oid_ui = self.entry_base_oid.get().strip()
-        for name, syntax, desc, parent, suffix in matches:
+
+        # Traitement des Items (OBJECT-TYPE)
+        for name, syntax, desc, parent, suffix in matches_items:
             desc_clean = " ".join(desc.split())
             syntax_clean = syntax.strip()
             
             if "SEQUENCE" in syntax_clean:
                 continue
 
-            # Résolution de l'OID de l'item
+            # Formater le suffixe pour gérer les niveaux multiples (ex: "0 1" -> "0.1")
+            suffix_fmt = ".".join(suffix.split())
+
+            # Résolution de l'OID (avec .0 pour les items scalaires)
             if name in known_oids and known_oids[name].startswith("."):
                 full_oid = f"{known_oids[name]}.0"
             elif parent in known_oids and known_oids[parent].startswith("."):
-                full_oid = f"{known_oids[parent]}.{suffix}.0"
+                full_oid = f"{known_oids[parent]}.{suffix_fmt}.0"
             else:
-                # Fallback sur la base OID de l'UI si on n'a pas pu résoudre le parent
-                # On essaie quand même de voir si le parent est connu mais non absolu
-                p_val = known_oids.get(parent, parent)
-                full_oid = f"{base_oid_ui}.{suffix}.0" # Comportement par défaut (simple)
+                full_oid = f"{base_oid_ui}.{suffix_fmt}.0"
             
             self.tree.insert("", "end", iid=count, values=("☐", name, full_oid, syntax_clean, desc_clean))
             self.parsed_items.append({
@@ -576,10 +635,52 @@ class MibToZabbixApp(ctk.CTk):
                 "selected": False,
                 "name": name,
                 "parent": parent,
-                "suffix": suffix,
+                "suffix": suffix_fmt,
                 "syntax": syntax_clean,
                 "desc": desc_clean,
-                "resolved_oid": full_oid
+                "resolved_oid": full_oid,
+                "is_trap": False
+            })
+            count += 1
+
+        # Traitement des Traps (NOTIFICATION-TYPE / TRAP-TYPE)
+        # Structure de match : (name, enterprise, objects/vars, desc, parent_v2, suffix_v2, suffix_v1)
+        for m in matches_traps:
+            name, enterprise, objects, desc, parent_v2, suffix_v2, suffix_v1 = m
+            desc_clean = " ".join(desc.split())
+            
+            # Détermination du parent et du suffixe selon le type de trap
+            if suffix_v1:
+                # Style SNMPv1 (TRAP-TYPE)
+                parent = enterprise
+                suffix = suffix_v1
+            else:
+                # Style SNMPv2 (NOTIFICATION-TYPE)
+                parent = parent_v2
+                suffix = suffix_v2
+
+            # Formater le suffixe (ex: "0 1" -> "0.1")
+            suffix_fmt = ".".join(suffix.split())
+
+            # Résolution de l'OID (sans .0 pour les traps)
+            if name in known_oids and known_oids[name].startswith("."):
+                full_oid = known_oids[name]
+            elif parent in known_oids and known_oids[parent].startswith("."):
+                full_oid = f"{known_oids[parent]}.{suffix_fmt}"
+            else:
+                full_oid = f"{base_oid_ui}.{suffix_fmt}"
+            
+            self.tree.insert("", "end", iid=count, values=("☐", f"[TRAP] {name}", full_oid, "Trap", desc_clean))
+            self.parsed_items.append({
+                "id": count,
+                "selected": False,
+                "name": name,
+                "parent": parent,
+                "suffix": suffix,
+                "syntax": "Trap",
+                "desc": desc_clean,
+                "resolved_oid": full_oid,
+                "is_trap": True
             })
             count += 1
             
@@ -615,15 +716,50 @@ class MibToZabbixApp(ctk.CTk):
         if column == "#1":
             try:
                 iid = int(item_id_str)
-                # Find the item in parsed_items
-                item_data = next((item for item in self.parsed_items if item['id'] == iid), None)
-                if item_data:
-                    item_data['selected'] = not item_data['selected']
-                    
-                    # Update Treeview row
+                is_shift = event.state & 0x0001
+                
+                # Find current item
+                curr_item = next((item for item in self.parsed_items if item['id'] == iid), None)
+                if not curr_item:
+                    return
+
+                if is_shift and self.last_clicked_id is not None:
+                    # Range selection
+                    all_visible_iids = self.tree.get_children()
+                    try:
+                        start_idx = all_visible_iids.index(str(self.last_clicked_id))
+                        end_idx = all_visible_iids.index(str(iid))
+                        
+                        if start_idx > end_idx:
+                            start_idx, end_idx = end_idx, start_idx
+                        
+                        # Use the new target state (flipping the current state of the clicked item)
+                        target_state = not curr_item['selected']
+                        
+                        for i in range(start_idx, end_idx + 1):
+                            child_iid_str = all_visible_iids[i]
+                            child_iid = int(child_iid_str)
+                            child_item = next((item for item in self.parsed_items if item['id'] == child_iid), None)
+                            if child_item:
+                                child_item['selected'] = target_state
+                                values = list(self.tree.item(child_iid_str, "values"))
+                                values[0] = "☑" if target_state else "☐"
+                                self.tree.item(child_iid_str, values=values)
+                    except ValueError:
+                        # Fallback if last_clicked_id is not visible
+                        curr_item['selected'] = not curr_item['selected']
+                        values = list(self.tree.item(item_id_str, "values"))
+                        values[0] = "☑" if curr_item['selected'] else "☐"
+                        self.tree.item(item_id_str, values=values)
+                else:
+                    # Normal toggle
+                    curr_item['selected'] = not curr_item['selected']
                     values = list(self.tree.item(item_id_str, "values"))
-                    values[0] = "☑" if item_data['selected'] else "☐"
+                    values[0] = "☑" if curr_item['selected'] else "☐"
                     self.tree.item(item_id_str, values=values)
+                
+                self.last_clicked_id = iid
+                
             except (ValueError, StopIteration):
                 pass
 
@@ -671,6 +807,8 @@ class MibToZabbixApp(ctk.CTk):
 
     def get_zabbix_type(self, syntax_str):
         s = syntax_str.lower()
+        if "trap" in s:
+            return "TEXT" # Traps are usually best as text/character
         if any(x in s for x in ["displaystring", "octet string", "string"]):
             return "CHAR"
         if any(x in s for x in ["integer", "counter", "gauge", "timeticks", "unsigned"]):
@@ -692,6 +830,7 @@ class MibToZabbixApp(ctk.CTk):
         template_name = self.entry_tpl_name.get().strip()
         group_name = self.entry_group.get().strip()
         zabbix_version = self.entry_version.get().strip()
+        default_delay = self.entry_delay.get().strip() or "8h"
 
         if "XXXX" in base_oid or base_oid == "":
             messagebox.showerror(self.t['msg_error'], self.t['msg_no_root'])
@@ -717,7 +856,7 @@ class MibToZabbixApp(ctk.CTk):
             self.btn_generate.configure(state="normal")
 
             # Open Preview Window
-            preview = PreviewWindow(self, items_to_preview, base_oid, template_name, group_name, zabbix_version, lang=self.lang)
+            preview = PreviewWindow(self, items_to_preview, base_oid, template_name, group_name, zabbix_version, default_delay, lang=self.lang)
             
             # Force focus and lift
             preview.lift()
